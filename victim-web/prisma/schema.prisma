@@ -1,0 +1,23 @@
+// victim-web/prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       Int     @id @default(autoincrement())
+  username String  @unique
+  password String  // ในงานจริงต้อง Hash แต่เพื่อการศึกษาเก็บ Plaintext ได้ (ถ้าระบุในเล่ม)
+}
+
+model AttackLog {
+  id        Int      @id @default(autoincrement())
+  ip        String?
+  timestamp DateTime @default(now())
+  success   Boolean
+  mode      String   // บันทึกว่าตอนนั้นใช้โหมดไหน (NONE, CAPTCHA, etc.)
+}

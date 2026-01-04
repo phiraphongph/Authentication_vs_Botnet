@@ -1,0 +1,52 @@
+version: "3.8"
+services:
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: database
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - backend-network
+
+  web:
+    build: ./victim-web
+    ports:
+      - "8080:3000"
+    environment:
+      DATABASE_URL: postgres://user:1234@db:5432/database
+      SECURITY_MODE: NONE
+    depends_on:
+      - db
+    networks:
+      - backend-network
+      - frontend-network
+    volumes:
+      - ./victim-web:/app # เชื่อมโฟลเดอร์เครื่องเรา เข้าไปทับใน Container
+      - /app/node_modules # ยกเว้นโฟลเดอร์นี้ (ให้ใช้ของใน Docker ห้ามเอาของเครื่องเราไปทับ)
+      - /app/.next # ยกเว้น cache ของ next build
+
+  attacker:
+    build: ./attacker-bot
+    environment:
+      TARGET_URL: http://web:3000/api/login
+      ATTACK_RATE: 100 # (req/sec) ปรับความถี่ตรงนี้
+    networks:
+      - frontend-network
+    volumes:
+      - ./attacker-bot:/app # เชื่อมโฟลเดอร์เครื่องเรา เข้าไปทับใน Container
+      - /app/__pycache__ # ยกเว้นโฟลเดอร์นี้ (ให้ใช้ของใน Docker ห้ามเอาของเครื่องเราไปทับ)
+      - /app/.next # ยกเว้น cache ของ next build
+
+    # deploys:
+    #   replicas: 5 # ปรับจำนวน Bot ตรงนี้
+
+networks:
+  frontend-network: # วงนี้ใครก็เข้าได้ (Bot, Web)
+  backend-network: # วงนี้ห้ามคนนอกเข้า (Web, DB)
+    internal: true # ใส่ตรงนี้เพื่อบอก Docker ว่าห้ามออกเน็ต ห้ามใครเข้า (ปลอดภัยสูงสุด)
+
+volumes:
+  db_data:
