@@ -33,6 +33,7 @@ services:
     environment:
       TARGET_URL: http://web:3000/api/login
       ATTACK_RATE: 100 # (req/sec) ปรับความถี่ตรงนี้
+      PYTHONUNBUFFERED: 1 
     networks:
       - frontend-network
     volumes:
@@ -40,8 +41,8 @@ services:
       - /app/__pycache__ # ยกเว้นโฟลเดอร์นี้ (ให้ใช้ของใน Docker ห้ามเอาของเครื่องเราไปทับ)
       - /app/.next # ยกเว้น cache ของ next build
 
-    # deploys:
-    #   replicas: 5 # ปรับจำนวน Bot ตรงนี้
+    deploy:
+      replicas: 10 # ปรับจำนวน Bot ตรงนี้
 
 networks:
   frontend-network: # วงนี้ใครก็เข้าได้ (Bot, Web)
