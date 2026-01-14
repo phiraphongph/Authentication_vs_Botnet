@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 export async function POST(request: Request) {
   try {
-    // 1. รับข้อมูลที่บอตส่งมา
+    // รับข้อมูลที่บอตส่งมา
     const body = await request.json();
     const { username, password } = body;
 
@@ -12,12 +12,12 @@ export async function POST(request: Request) {
     const ip = request.headers.get("x-forwarded-for") || "unknown";
     const securityMode = process.env.SECURITY_MODE || "NONE";
 
-    // 2. ปริ้นท์ลง Console (เพื่อให้เราเห็นใน Docker Log)
+    // แสดงข้อมูลที่รับมา
     console.log(
-      `[WEB] ⚠️ มีคนพยายาม Login: ${username} | Password: ${password} | IP: ${ip}`
+      `[WEB]!!!!!!! มีคนพยายาม Login: ${username} | Password: ${password} | IP: ${ip}`
     );
 
-    // 🔍 1. ค้นหา User ใน Database
+    // ค้นหา User ใน Database
     const user = await prisma.user.findUnique({
       where: { username: username },
     });
@@ -28,6 +28,7 @@ export async function POST(request: Request) {
 
     // (ตรงนี้แหละที่เพื่อนคุณต้องมาเขียน Logic เชื่อม DB ทีหลัง)
     // ตอนนี้เอาแค่ if โง่ๆ ไปก่อน
+    console.log("password จริงคือ:", user?.password, "vs", password);
     if (user && user.password === password) {
       isSuccess = true;
       message = "Login สำเร็จ! (แต่ระบบยังไม่เสร็จนะ)";
