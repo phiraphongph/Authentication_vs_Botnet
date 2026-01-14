@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export async function POST(request: Request) {
+  const startTime = performance.now(); // เริ่มจับเวลา
   try {
     // รับข้อมูลที่บอตส่งมา
     const body = await request.json();
@@ -26,16 +27,13 @@ export async function POST(request: Request) {
     let message = "Login พลาดจ้า";
     let status = 401;
 
-    // (ตรงนี้แหละที่เพื่อนคุณต้องมาเขียน Logic เชื่อม DB ทีหลัง)
-    // ตอนนี้เอาแค่ if โง่ๆ ไปก่อน
-    console.log("password จริงคือ:", user?.password, "vs", password);
     if (user && user.password === password) {
       isSuccess = true;
       message = "Login สำเร็จ! (แต่ระบบยังไม่เสร็จนะ)";
       status = 200;
     }
 
-    // 3. บันทึกลง DB
+    // บันทึกลง DB
     await prisma.attackLog.create({
       data: {
         ip: ip,
@@ -44,7 +42,11 @@ export async function POST(request: Request) {
       },
     });
 
-    // 4. ตอบกลับไป
+    const endTime = performance.now(); //จบเวลา
+    const duration = (endTime - startTime).toFixed(2); // คำนวณเป็น ms
+    console.log(`[BASIC] IP: ${ip} | 🕰️Time Used: ${duration}ms`);
+
+    // ตอบกลับไป
     return NextResponse.json(
       { success: isSuccess, message: message },
       { status: status }

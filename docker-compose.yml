@@ -33,7 +33,7 @@ services:
     environment:
       TARGET_URL: http://web:3000/api/login
       ATTACK_RATE: 100 # (req/sec) ปรับความถี่ตรงนี้
-      PYTHONUNBUFFERED: 1 
+      PYTHONUNBUFFERED: 1
     networks:
       - frontend-network
     volumes:
