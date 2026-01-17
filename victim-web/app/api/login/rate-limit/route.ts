@@ -10,14 +10,17 @@ const LIMIT_TIME = 60 * 1000; // 1 นาที
 const MAX_REQUESTS = 5; // อนุญาต 5 ครั้งต่อนาที
 
 export async function POST(request: Request) {
-  const startTime = performance.now(); // เริ่มจับเวลา
+  const startTime = Date.now(); // เริ่มจับเวลา
+  let status = 200;
+  let ip = "unknown";
+
   try {
     // รับข้อมูลที่บอตส่งมา
     const body = await request.json();
     const { username, password } = body;
 
     // Get IP
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    ip = request.headers.get("x-forwarded-for") || "unknown";
     const securityMode = process.env.SECURITY_MODE || "NONE";
 
     // --- ส่วนที่เพิ่ม: Rate Limit Logic ---
@@ -31,22 +34,20 @@ export async function POST(request: Request) {
       // ถ้ายังอยู่ในช่วง 1 นาที ให้เพิ่มจำนวนครั้ง
       rateData.count++;
       if (rateData.count > MAX_REQUESTS) {
-        const endTime = performance.now();
-        const duration = (endTime - startTime).toFixed(2);
-
-        console.log(`[RATE LIMIT] IP: ${ip} | Blocked at: ${duration}ms`);
+        status = 429;
+        console.log(`[RATE LIMIT] IP: ${ip} | Blocked`);
 
         return NextResponse.json(
-          { success: false, message: "ลองบ่อยเกินไปแล้ว! กรุณารอ 1 นาที" },
-          { status: 429 }
+          { success: false, message: "Too many requests wait 1 minute" },
+          { status: 429 },
         );
       }
     }
 
-    // แสดงข้อมูลที่รับมา
-    console.log(
-      `[WEB]!!!!!!! มีคนพยายาม Login: ${username} | Password: ${password} | IP: ${ip}`
-    );
+    // // แสดงข้อมูลที่รับมา
+    // console.log(
+    //   `[WEB]!!!!!!! มีคนพยายาม Login: ${username} | Password: ${password} | IP: ${ip}`,
+    // );
 
     // ค้นหา User ใน Database
     const user = await prisma.user.findUnique({
@@ -54,12 +55,12 @@ export async function POST(request: Request) {
     });
 
     let isSuccess = false;
-    let message = "Login พลาดจ้า";
-    let status = 401;
+    let message = "Login Failed";
+    status = 401;
 
     if (user && user.password === password) {
       isSuccess = true;
-      message = "Login สำเร็จ!";
+      message = "Login Success!";
       status = 200;
     }
 
@@ -72,21 +73,19 @@ export async function POST(request: Request) {
       },
     });
 
-    const endTime = performance.now(); // จบเวลา
-    const duration = (endTime - startTime).toFixed(2);
-    console.log(
-      `[RATE-LIMIT-MODE] IP: ${ip} | 🕰️Total Time Used: ${duration}ms`
-    );
-
     return NextResponse.json(
-      { success: isSuccess, message: message, timeUsed: `${duration}ms` },
-      { status: status }
+      { success: isSuccess, message: message },
+      { status: status },
     );
   } catch (error) {
     console.error("Error processing login:", error);
-    return NextResponse.json(
-      { error: "ส่งข้อมูลมาผิดรูปแบบหรือเปล่า?" },
-      { status: 400 }
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
+  } finally {
+    const duration = Date.now() - startTime;
+    const timestamp = new Date().toISOString();
+
+    console.log(
+      `[LOG],${timestamp},Rate-Limit-Login,${ip},${status},${duration}`,
     );
   }
 }

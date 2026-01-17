@@ -8,8 +8,9 @@ import string
 # อ่าน URL เป้าหมายจาก Docker Compose (http://web:3000/api/login)
 TARGET_URL = os.getenv("TARGET_URL", "http://localhost:3000/api/login/basic")
 #เปลี่ยนเป้าหมายตรงนี้ แล้วพิมพ์ docker compose restart attacker
-TARGET_URL = "http://web:3000/api/login/basic"
-# TARGET_URL = "http://web:3000/api/login/rate-limit"
+TARGET_URL_BASIC = "http://web:3000/api/login/basic"
+TARGET_URL_RATE_LIMIT = "http://web:3000/api/login/rate-limit"
+
 # ฟังก์ชันดึง IP ของ Container ตัวเอง
 def get_my_ip():
     try:
@@ -40,7 +41,8 @@ def start_attack():
             print(f"[BOT]{count}  กำลังส่ง Request จาก IP: {my_ip}" )
             count += 1
             # ยิง Request!
-            response = requests.post(TARGET_URL, json=payload, timeout=2)
+            response = requests.post(TARGET_URL_BASIC, json=payload, timeout=2)
+            response = requests.post(TARGET_URL_RATE_LIMIT, json=payload, timeout=2)
 
             # เช็คผลลัพธ์
             if response.status_code == 200:
