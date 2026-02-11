@@ -107,7 +107,7 @@ export async function POST(request: Request) {
 
     // [แก้ไข] Format Log ให้มี CPU Time
     console.log(
-      `[LOG],${timestamp},${ip},${status},${duration},${cpuTimeMs.toFixed(2)},${memoryUsageMB}`,
+      `[LOG],${timestamp},Rate-Limit-Login,${ip},${status},${duration},${cpuTimeMs.toFixed(2)},${memoryUsageMB}`,
     );
   }
 }

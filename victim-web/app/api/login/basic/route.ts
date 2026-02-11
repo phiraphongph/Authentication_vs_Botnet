@@ -72,9 +72,9 @@ export async function POST(request: Request) {
     const timestamp = new Date().toISOString();
 
     // Log ใน Format เดียวกับตัว Rate Limit เพื่อให้เอาไปทำกราฟเทียบกันได้
-    // Format: [LOG], Time, IP, Status, Duration(ms), CPU_Time(ms), Mem(MB)
+    // Format: [LOG], Time, Scenario, IP, Status, Duration(ms), CPU_Time(ms), Mem(MB)
     console.log(
-      `[LOG],${timestamp},${ip},${status},${duration},${cpuTimeMs.toFixed(2)},${memoryUsageMB}`,
+      `[LOG],${timestamp},Basic-Login,${ip},${status},${duration},${cpuTimeMs.toFixed(2)},${memoryUsageMB}`,
     );
   }
 }
