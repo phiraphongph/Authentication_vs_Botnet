@@ -3,89 +3,111 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// --- ส่วนที่เพิ่ม: ตัวแปรสำหรับเก็บประวัติใน Memory ---
-// เก็บข้อมูลเป็น { "ip_address": { count: จำนวนครั้ง, resetTime: เวลาที่จะรีเซ็ต } }
+// In-Memory Storage
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const LIMIT_TIME = 60 * 1000; // 1 นาที
-const MAX_REQUESTS = 5; // อนุญาต 5 ครั้งต่อนาที
+const LIMIT_TIME = 60 * 1000;
+const MAX_REQUESTS = 5;
 
 export async function POST(request: Request) {
-  const startTime = Date.now(); // เริ่มจับเวลา
+  // [เพิ่ม] 1. เริ่มจับเวลาทั้ง Real Time และ CPU Time
+  const startTime = Date.now();
+  const startCpu = process.cpuUsage();
+
   let status = 200;
   let ip = "unknown";
 
+  // ตัวแปรใหม่สำหรับเช็คสถานะ
+  let isBlocked = false;
+  let isLoginSuccess = false;
+  let message = "";
+
   try {
-    // รับข้อมูลที่บอตส่งมา
     const body = await request.json();
     const { username, password } = body;
 
-    // Get IP
     ip = request.headers.get("x-forwarded-for") || "unknown";
     const securityMode = process.env.SECURITY_MODE || "NONE";
 
-    // --- ส่วนที่เพิ่ม: Rate Limit Logic ---
+    // --- Rate Limit Logic ---
     const now = Date.now();
     const rateData = rateLimitMap.get(ip);
 
     if (!rateData || now > rateData.resetTime) {
-      // ถ้ายังไม่มีข้อมูล IP นี้ หรือเลยเวลา 1 นาทีไปแล้ว ให้เริ่มนับใหม่
       rateLimitMap.set(ip, { count: 1, resetTime: now + LIMIT_TIME });
     } else {
-      // ถ้ายังอยู่ในช่วง 1 นาที ให้เพิ่มจำนวนครั้ง
       rateData.count++;
       if (rateData.count > MAX_REQUESTS) {
+        // ไม่ return ทันที แต่เปลี่ยนสถานะตัวแปรแทน
+        isBlocked = true;
         status = 429;
-        console.log(`[RATE LIMIT] IP: ${ip} | Blocked`);
-
-        return NextResponse.json(
-          { success: false, message: "Too many requests wait 1 minute" },
-          { status: 429 },
-        );
+        message = "Too many requests wait 1 minute";
       }
     }
 
-    // // แสดงข้อมูลที่รับมา
-    // console.log(
-    //   `[WEB]!!!!!!! มีคนพยายาม Login: ${username} | Password: ${password} | IP: ${ip}`,
-    // );
+    // --- Login Logic (ทำงานเฉพาะถ้าไม่โดนบล็อก) ---
+    if (!isBlocked) {
+      const user = await prisma.user.findUnique({
+        where: { username: username },
+      });
 
-    // ค้นหา User ใน Database
-    const user = await prisma.user.findUnique({
-      where: { username: username },
-    });
-
-    let isSuccess = false;
-    let message = "Login Failed";
-    status = 401;
-
-    if (user && user.password === password) {
-      isSuccess = true;
-      message = "Login Success!";
-      status = 200;
+      if (user && user.password === password) {
+        isLoginSuccess = true;
+        message = "Login Success!";
+        status = 200;
+      } else {
+        isLoginSuccess = false;
+        message = "Login Failed";
+        status = 401;
+      }
     }
 
-    // บันทึกลง DB
+    // --- Database Logging ---
     await prisma.attackLog.create({
       data: {
         ip: ip,
-        success: isSuccess,
-        mode: securityMode,
+        success: isLoginSuccess,
+        mode: isBlocked ? "BLOCKED_BY_RATELIMIT" : securityMode,
       },
     });
 
+    // --- Return Response ---
+    if (isBlocked) {
+      return NextResponse.json(
+        { success: false, message: message },
+        { status: 429 },
+      );
+    }
+
     return NextResponse.json(
-      { success: isSuccess, message: message },
+      { success: isLoginSuccess, message: message },
       { status: status },
     );
   } catch (error) {
     console.error("Error processing login:", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   } finally {
+    // [เพิ่ม] ส่วนการวัดผล Performance
+
+    // 1. Duration (Wall-clock time): เวลารวมทั้งหมดที่ user ต้องรอ
     const duration = Date.now() - startTime;
+
+    // 2. CPU Time: เวลาที่ Server ประมวลผลจริงๆ (ไม่รวมเวลารอ DB ตอบกลับ)
+    const cpuUsed = process.cpuUsage(startCpu);
+    // user = เวลาใน JS Code, system = เวลาใน OS Kernel
+    const cpuTimeMs = (cpuUsed.user + cpuUsed.system) / 1000;
+
+    // 3. Memory
+    const memoryUsageMB = (
+      process.memoryUsage().heapUsed /
+      1024 /
+      1024
+    ).toFixed(2);
+
     const timestamp = new Date().toISOString();
 
+    // [แก้ไข] Format Log ให้มี CPU Time
     console.log(
-      `[LOG],${timestamp},Rate-Limit-Login,${ip},${status},${duration}`,
+      `[LOG],${timestamp},${ip},${status},${duration},${cpuTimeMs.toFixed(2)},${memoryUsageMB}`,
     );
   }
 }
