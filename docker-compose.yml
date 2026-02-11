@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   db:
     image: postgres:14-alpine
@@ -10,6 +9,11 @@ services:
       - db_data:/var/lib/postgresql/data
     networks:
       - backend-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d database"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   web:
     build: ./victim-web
@@ -17,9 +21,9 @@ services:
       - "8080:3000"
     environment:
       DATABASE_URL: postgres://user:1234@db:5432/database
-      SECURITY_MODE: NONE
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - backend-network
       - frontend-network
@@ -28,21 +32,31 @@ services:
       - /app/node_modules # ยกเว้นโฟลเดอร์นี้ (ให้ใช้ของใน Docker ห้ามเอาของเครื่องเราไปทับ)
       - /app/.next # ยกเว้น cache ของ next build
 
-  attacker:
+  attacker-basic:
     build: ./attacker-bot
     environment:
-      TARGET_URL: http://web:3000/api/login
-      ATTACK_RATE: 100 # (req/sec) ปรับความถี่ตรงนี้
+      TARGET_ENDPOINT: basic # โจมตี endpoint ที่ไม่มี Rate Limit
       PYTHONUNBUFFERED: 1
     networks:
       - frontend-network
     volumes:
       - ./attacker-bot:/app # เชื่อมโฟลเดอร์เครื่องเรา เข้าไปทับใน Container
-      - /app/__pycache__ # ยกเว้นโฟลเดอร์นี้ (ให้ใช้ของใน Docker ห้ามเอาของเครื่องเราไปทับ)
-      - /app/.next # ยกเว้น cache ของ next build
-
+      - /app/__pycache__ # ยกเว้นโฟลเดอร์นี้
     deploy:
-      replicas: 10 # ปรับจำนวน Bot ตรงนี้
+      replicas: 5 # 5 Bot โจมตี basic
+
+  attacker-ratelimit:
+    build: ./attacker-bot
+    environment:
+      TARGET_ENDPOINT: rate-limit # โจมตี endpoint ที่มี Rate Limit
+      PYTHONUNBUFFERED: 1
+    networks:
+      - frontend-network
+    volumes:
+      - ./attacker-bot:/app
+      - /app/__pycache__
+    deploy:
+      replicas: 5 # 5 Bot โจมตี rate-limit
 
 networks:
   frontend-network: # วงนี้ใครก็เข้าได้ (Bot, Web)

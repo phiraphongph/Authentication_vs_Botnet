@@ -83,7 +83,13 @@ export async function POST(request: Request) {
       { status: status },
     );
   } catch (error) {
+    if (error instanceof SyntaxError) {
+      console.warn(`[WARN] Malformed JSON from ${ip}`);
+      status = 400;
+      return NextResponse.json({ error: "Bad Request" }, { status: 400 });
+    }
     console.error("Error processing login:", error);
+    status = 500;
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   } finally {
     // [เพิ่ม] ส่วนการวัดผล Performance

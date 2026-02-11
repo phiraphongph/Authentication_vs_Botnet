@@ -19,5 +19,5 @@ RUN npx prisma generate
 # เปิด Port 3000
 EXPOSE 3000
 
-# รันโหมด Dev (เพื่อให้แก้โค้ดแล้วเปลี่ยนทันทีไม่ต้อง Rebuild)
-CMD ["npm", "run", "dev"]
+# ใช้ entrypoint.sh เพื่อรัน migrate + seed ก่อน start
+CMD ["sh", "entrypoint.sh"]
