@@ -9,7 +9,7 @@ async function main() {
     update: {},
     create: {
       username: "admin",
-      password: "super_secret_password", // รหัสผ่านใน DB
+      password: "secretpassword99", // รหัสผ่านใน DB
     },
   });
   console.log("สร้าง User สำเร็จแล้ว:", user);

@@ -12,8 +12,14 @@ export default function Home() {
         </p>
         <div className="flex gap-4">
           <Link
-            href="/dashboard"
+            href="/login"
             className="flex h-12 items-center justify-center rounded-full bg-black px-8 text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+          >
+            🔐 Login →
+          </Link>
+          <Link
+            href="/dashboard"
+            className="flex h-12 items-center justify-center rounded-full border border-zinc-300 px-8 text-black transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-white dark:hover:bg-zinc-900"
           >
             📊 Dashboard →
           </Link>

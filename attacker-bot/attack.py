@@ -24,7 +24,7 @@ def get_my_ip():
         return "Unknown"
 
 def generate_random_password():
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=16))
 
 def attack_worker(worker_id):
     my_ip = get_my_ip()
