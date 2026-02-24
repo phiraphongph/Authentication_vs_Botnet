@@ -43,7 +43,7 @@ services:
       - ./attacker-bot:/app # เชื่อมโฟลเดอร์เครื่องเรา เข้าไปทับใน Container
       - /app/__pycache__ # ยกเว้นโฟลเดอร์นี้
     deploy:
-      replicas: 10 # 5 Bot โจมตี basic
+      replicas: 5 # 5 Bot โจมตี basic
 
   attacker-ratelimit:
     build: ./attacker-bot
@@ -56,7 +56,20 @@ services:
       - ./attacker-bot:/app
       - /app/__pycache__
     deploy:
-      replicas: 10 # 5 Bot โจมตี rate-limit
+      replicas: 5 # 5 Bot โจมตี rate-limit
+
+  attacker-captcha:
+    build: ./attacker-bot
+    environment:
+      TARGET_ENDPOINT: captcha # โจมตี endpoint ที่มี CAPTCHA
+      PYTHONUNBUFFERED: 1
+    networks:
+      - frontend-network
+    volumes:
+      - ./attacker-bot:/app
+      - /app/__pycache__
+    deploy:
+      replicas: 5 # 5 Bot โจมตี captcha
 
 networks:
   frontend-network: # วงนี้ใครก็เข้าได้ (Bot, Web)
