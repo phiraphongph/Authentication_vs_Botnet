@@ -7,12 +7,18 @@ services:
       POSTGRES_DB: database
     volumes:
       - db_data:/var/lib/postgresql/data
-    networks:
-      - backend-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U user -d database"]
       interval: 5s
       timeout: 5s
+      retries: 5
+
+  captcha-mock:
+    build: ./captcha-mock
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 3s
       retries: 5
 
   web:
@@ -20,74 +26,121 @@ services:
     ports:
       - "8080:3000"
     environment:
-      DATABASE_URL: postgres://user:1234@db:5432/database
+      DATABASE_URL: postgres://user:1234@db:5432/database?connection_limit=50&pool_timeout=10
+      CAPTCHA_VERIFY_URL: http://captcha-mock:4000/verify
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - backend-network
-      - frontend-network
+      captcha-mock:
+        condition: service_healthy
     volumes:
-      - ./victim-web:/app # เชื่อมโฟลเดอร์เครื่องเรา เข้าไปทับใน Container
-      - /app/node_modules # ยกเว้นโฟลเดอร์นี้ (ให้ใช้ของใน Docker ห้ามเอาของเครื่องเราไปทับ)
-      - /app/.next # ยกเว้น cache ของ next build
+      - ./victim-web:/app
+      - /app/node_modules
+      - /app/.next
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1             # อนุญาตให้ OS นำพอร์ตสถานะ TIME_WAIT กลับมาใช้ใหม่ได้ทันที
+      - net.ipv4.ip_local_port_range=1024 65535 # ขยายจำนวน Ephemeral Ports ให้ใช้ได้สูงสุด ~64,000 พอร์ต
+      - net.core.somaxconn=65535            # ขยายขนาดคิวรับ Connection ของ Socket
 
   attacker-basic:
     build: ./attacker-bot
+    profiles: ["attacker-basic"]
     environment:
-      TARGET_ENDPOINT: basic # โจมตี endpoint ที่ไม่มี Rate Limit
+      TARGET_ENDPOINT: basic
+      SPOOF_MODE: pool
+      IP_POOL_SIZE: 50
       PYTHONUNBUFFERED: 1
-    networks:
-      - frontend-network
+    depends_on:
+      web:
+        condition: service_started
     volumes:
-      - ./attacker-bot:/app # เชื่อมโฟลเดอร์เครื่องเรา เข้าไปทับใน Container
-      - /app/__pycache__ # ยกเว้นโฟลเดอร์นี้
+      - ./attacker-bot:/app
+      - /app/__pycache__
     deploy:
-      replicas: 5 # 5 Bot โจมตี basic
+      replicas: 5
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+      - net.ipv4.ip_local_port_range=1024 65535
 
   attacker-ratelimit:
     build: ./attacker-bot
+    profiles: ["attacker-ratelimit"]
     environment:
-      TARGET_ENDPOINT: rate-limit # โจมตี endpoint ที่มี Rate Limit
+      TARGET_ENDPOINT: rate-limit
+      SPOOF_MODE: pool
+      IP_POOL_SIZE: 50
       PYTHONUNBUFFERED: 1
-    networks:
-      - frontend-network
+    depends_on:
+      web:
+        condition: service_started
     volumes:
       - ./attacker-bot:/app
       - /app/__pycache__
     deploy:
-      replicas: 5 # 5 Bot โจมตี rate-limit
+      replicas: 5
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+      - net.ipv4.ip_local_port_range=1024 65535
+
+  attacker-ratelimit-randomip:
+    build: ./attacker-bot
+    profiles: ["attacker-ratelimit-randomip"]
+    environment:
+      TARGET_ENDPOINT: rate-limit
+      SPOOF_MODE: random
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      web:
+        condition: service_started
+    volumes:
+      - ./attacker-bot:/app
+      - /app/__pycache__
+    deploy:
+      replicas: 5
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+      - net.ipv4.ip_local_port_range=1024 65535
 
   attacker-captcha:
     build: ./attacker-bot
+    profiles: ["attacker-captcha"]
     environment:
-      TARGET_ENDPOINT: captcha # โจมตี endpoint ที่มี CAPTCHA
+      TARGET_ENDPOINT: captcha
+      SPOOF_MODE: pool
+      IP_POOL_SIZE: 50
       PYTHONUNBUFFERED: 1
-    networks:
-      - frontend-network
+    depends_on:
+      web:
+        condition: service_started
     volumes:
       - ./attacker-bot:/app
       - /app/__pycache__
     deploy:
-      replicas: 5 # 5 Bot โจมตี captcha
+      replicas: 5
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+      - net.ipv4.ip_local_port_range=1024 65535
 
   attacker-mfa:
     build: ./attacker-bot
+    profiles: ["attacker-mfa"]
     environment:
-      TARGET_ENDPOINT: mfa # โจมตี endpoint ที่มี MFA
+      TARGET_ENDPOINT: mfa
+      SPOOF_MODE: pool
+      IP_POOL_SIZE: 50
       PYTHONUNBUFFERED: 1
-    networks:
-      - frontend-network
+    depends_on:
+      web:
+        condition: service_started
     volumes:
       - ./attacker-bot:/app
       - /app/__pycache__
     deploy:
-      replicas: 5 # 5 Bot โจมตี mfa
-
-networks:
-  frontend-network: # วงนี้ใครก็เข้าได้ (Bot, Web)
-  backend-network: # วงนี้ห้ามคนนอกเข้า (Web, DB)
-    internal: true # ใส่ตรงนี้เพื่อบอก Docker ว่าห้ามออกเน็ต ห้ามใครเข้า (ปลอดภัยสูงสุด)
+      replicas: 5
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+      - net.ipv4.ip_local_port_range=1024 65535
 
 volumes:
   db_data:
+

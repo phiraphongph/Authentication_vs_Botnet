@@ -8,6 +8,17 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const LIMIT_TIME = 60 * 1000;
 const MAX_REQUESTS = 5;
 
+// --- [ADD THIS] Garbage Collection ---
+// ทำความสะอาด Map ทุกๆ 1 นาที ลบ IP ที่พ้นโทษแบน/หมดเวลาแล้วออกไป เพื่อป้องกัน Memory Leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of rateLimitMap.entries()) {
+    if (now > value.resetTime) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, LIMIT_TIME);
+
 export async function POST(request: Request) {
   // [เพิ่ม] 1. เริ่มจับเวลาทั้ง Real Time และ CPU Time
   const startTime = Date.now();

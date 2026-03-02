@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { authenticator } from "otplib";
 
 const prisma = new PrismaClient();
 
+// Hardcoded TOTP secret สำหรับการวิจัย
+// (ข้อจำกัด: ในระบบจริงต้องดึง secret ของแต่ละ user จาก DB ซึ่งจะเพิ่ม I/O Time อีกเล็กน้อย)
+const MFA_SECRET = "JBSWY3DPEHPK3PXP";
+
 export async function POST(request: Request) {
-  // [1] เริ่มจับเวลาทั้ง Real Time และ CPU Time
+  // [1] เริ่มจับเวลาทั้ง Real Time และ CPU Time สำหรับงานวิจัย
   const startTime = Date.now();
   const startCpu = process.cpuUsage();
 
@@ -17,29 +22,17 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    // รับค่า mfaCode มาแทน captchaToken
     const { username, password, mfaCode } = body;
 
     ip = request.headers.get("x-forwarded-for") || "unknown";
     const securityMode = process.env.SECURITY_MODE || "MFA";
 
-    // --- MFA Verification Logic (Mock for Load Testing) ---
-    // 1. จำลองเวลาที่เซิร์ฟเวอร์ต้องใช้คำนวณ Hash ของ TOTP (MFA จะใช้เวลาน้อยกว่าการวิ่งไปถาม API ของ Captcha)
-    // สมมติว่าใช้เวลาประมาณ 50ms
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // --- MFA Verification Logic (Real TOTP via otplib) ---
+    // เซิร์ฟเวอร์ทำหน้าที่ Verify อย่างเดียว (ลบ authenticator.generate ออกแล้ว)
+    // การคำนวณ HMAC-SHA1 ตรงนี้คือ CPU Overhead ที่แท้จริงของระบบ MFA
+    isMfaValid = authenticator.check(mfaCode, MFA_SECRET);
 
-    // 2. จำลองการประมวลผล CPU (MFA มีการทำ Cryptographic Hashing)
-    // จำลองการใช้ CPU ให้ใกล้เคียงกับการคำนวณ HMAC-SHA1
-    for (let i = 0; i < 10000; i++) {
-      Math.random() * Math.random();
-    }
-
-    // 3. ตรวจสอบ MFA Code
-    // (ใน attack.py ถ้าต้องการให้บอทผ่าน MFA ได้ ให้ส่งค่า "123456" มา)
-    if (mfaCode === "123456") {
-      isMfaValid = true;
-    } else {
-      isMfaValid = false;
+    if (!isMfaValid) {
       status = 403;
       message = "Invalid MFA Code";
     }
@@ -62,6 +55,7 @@ export async function POST(request: Request) {
     }
 
     // --- Database Logging ---
+    // บันทึก Log ลง DB เสมอ เพื่อให้เกิด Database I/O Cost เท่าเทียมกับ Scenario อื่น (Fair Comparison)
     await prisma.attackLog.create({
       data: {
         ip: ip,
@@ -92,12 +86,12 @@ export async function POST(request: Request) {
     status = 500;
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   } finally {
-    // --- ส่วนการวัดผล Performance ---
+    // --- ส่วนการวัดผล Performance (Research Metrics) ---
 
-    // 1. Duration (Wall-clock time): เวลารวมทั้งหมดที่รอ
+    // 1. Duration (Wall-clock time): เวลารวมทั้งหมดที่รอ (รวม CPU และ I/O)
     const duration = Date.now() - startTime;
 
-    // 2. CPU Time: เวลาที่ Server ประมวลผลจริงๆ
+    // 2. CPU Time: เวลาที่ Server ประมวลผลจริงๆ (เพียวๆ จากกระบวนการเข้ารหัสและเช็คเงื่อนไข)
     const cpuUsed = process.cpuUsage(startCpu);
     const cpuTimeMs = (cpuUsed.user + cpuUsed.system) / 1000;
 
@@ -110,8 +104,7 @@ export async function POST(request: Request) {
 
     const timestamp = new Date().toISOString();
 
-    // ปริ้นต์ Log ในรูปแบบ CSV เพื่อให้ plot_graphs.py ดึงไปใช้ต่อ
-    // สังเกตว่าเปลี่ยน Tag เป็น MFA-Login เพื่อให้แยกข้อมูลในกราฟได้
+    // ปริ้นต์ Log ในรูปแบบ CSV เพื่อให้สคริปต์ plot_graphs.py ดึงไปใช้ต่อ
     console.log(
       `[LOG],${timestamp},MFA-Login,${ip},${status},${duration},${cpuTimeMs.toFixed(2)},${memoryUsageMB}`,
     );

@@ -19,14 +19,35 @@ export async function POST(request: Request) {
     const { username, password } = body;
 
     ip = request.headers.get("x-forwarded-for") || "unknown";
-    const securityMode = process.env.SECURITY_MODE || "NONE"; // Mode ปกติคือ NONE
+    const securityMode = process.env.SECURITY_MODE || "NONE";
 
-    // ค้นหา User ใน Database
+    // --- [ADD THIS] 1. Fail-Fast Input Validation ---
+    if (!username || !password) {
+      status = 400;
+      message = "Missing credentials";
+      
+      // บันทึก Log กรณี Bad Request เพื่อความสมบูรณ์ของข้อมูล
+      await prisma.attackLog.create({
+        data: {
+          ip: ip,
+          success: false,
+          mode: "INVALID_INPUT",
+          timestamp: new Date(),
+        },
+      });
+      
+      return NextResponse.json(
+        { success: false, message: message },
+        { status: status },
+      );
+    }
+
+    // --- 2. Database Query (ทำงานเมื่อ Input ครบถ้วนเท่านั้น) ---
     const user = await prisma.user.findUnique({
       where: { username: username },
     });
 
-    status = 401; // Default status ถ้า login ไม่ผ่าน
+    status = 401; // Default status 
 
     if (user && user.password === password) {
       isSuccess = true;
@@ -40,7 +61,7 @@ export async function POST(request: Request) {
         ip: ip,
         success: isSuccess,
         mode: securityMode,
-        timestamp: new Date(), // เพิ่ม timestamp เพื่อความชัวร์
+        timestamp: new Date(),
       },
     });
 
